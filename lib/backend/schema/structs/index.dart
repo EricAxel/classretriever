@@ -1,0 +1,20 @@
+export '/backend/schema/util/schema_util.dart';
+
+export 'course_worklist_struct.dart';
+export 'event_struct.dart';
+export 'messages_struct.dart';
+export 'monthly_data_struct.dart';
+export 'shop_list_struct.dart';
+export 'student_submissionslist_struct.dart';
+export 'assignment_submission_struct.dart';
+export 'course_work_struct.dart';
+export 'courses_struct.dart';
+export 'courseslist_struct.dart';
+export 'due_date_struct.dart';
+export 'due_time_struct.dart';
+export 'gradebook_settings_struct.dart';
+export 'link_struct.dart';
+export 'materials_struct.dart';
+export 'student_submissions_struct.dart';
+export 'testresponse_struct.dart';
+export 'tokens_struct.dart';
