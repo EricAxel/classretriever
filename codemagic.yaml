@@ -1,0 +1,80 @@
+# Compilaciones de Class Retriever en Codemagic.
+#
+# - ios-testflight: compila el IPA firmado y lo sube a TestFlight.
+# - android-release: compila el APK (para instalar a mano) y el AAB (para Google Play), firmados.
+#
+# Las credenciales no viven aquí. Se cargan en Codemagic:
+# - Integración de App Store Connect "classretriever_asc" (Issuer ID, Key ID y archivo .p8).
+# - Certificado de distribución de Apple y perfil de App Store (Code signing identities -> iOS).
+# - Llave de Android "classretriever_keystore" (Code signing identities -> Android keystores).
+#
+# El número de compilación sube solo: 16 (última versión publicada) + número de build de Codemagic.
+
+workflows:
+  ios-testflight:
+    name: iOS a TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: classretriever_asc
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.mycompany.classretriever
+      vars:
+        BUILD_NAME: 4.1.0
+        BUILD_NUMBER_BASE: 16
+      flutter: 3.41.9
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Paquetes de Flutter
+        script: flutter pub get
+      - name: Pods de iOS
+        script: |
+          cd ios
+          pod install --repo-update
+      - name: Firma en el proyecto de Xcode
+        script: xcode-project use-profiles
+      - name: Compilar IPA
+        script: |
+          flutter build ipa --release \
+            --build-name="$BUILD_NAME" \
+            --build-number=$((BUILD_NUMBER_BASE + BUILD_NUMBER)) \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
+
+  android-release:
+    name: Android (APK y AAB)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      android_signing:
+        - classretriever_keystore
+      vars:
+        BUILD_NAME: 4.1.0
+        BUILD_NUMBER_BASE: 16
+      flutter: 3.41.9
+    scripts:
+      - name: Paquetes de Flutter
+        script: flutter pub get
+      - name: Compilar APK
+        script: |
+          flutter build apk --release \
+            --build-name="$BUILD_NAME" \
+            --build-number=$((BUILD_NUMBER_BASE + BUILD_NUMBER))
+      - name: Compilar AAB
+        script: |
+          flutter build appbundle --release \
+            --build-name="$BUILD_NAME" \
+            --build-number=$((BUILD_NUMBER_BASE + BUILD_NUMBER))
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/*.aab
