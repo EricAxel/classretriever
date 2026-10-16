@@ -559,7 +559,7 @@ class _YourStudentWidgetState extends State<YourStudentWidget> {
                                                                 .set(
                                                                     createQrRecordData(
                                                               url:
-                                                                  'https://classretrivertoken.flutterflow.app/requestPermission?data=AX0${currentUserUid}AX1${functions.quitSpaceUrl(_model.studentsNameTextController.text)}AX2${_model.studentsEmailTextController.text}AX3',
+                                                                  'https://class-retriever-42b99.firebaseapp.com/connect?data=AX0${currentUserUid}AX1${Uri.encodeComponent(functions.quitSpaceUrl(_model.studentsNameTextController.text) ?? '')}AX2${Uri.encodeComponent(_model.studentsEmailTextController.text)}AX3',
                                                               time:
                                                                   getCurrentTimestamp,
                                                               status: true,
@@ -569,7 +569,7 @@ class _YourStudentWidgetState extends State<YourStudentWidget> {
                                                                 QrRecord.getDocumentFromData(
                                                                     createQrRecordData(
                                                                       url:
-                                                                          'https://classretrivertoken.flutterflow.app/requestPermission?data=AX0${currentUserUid}AX1${functions.quitSpaceUrl(_model.studentsNameTextController.text)}AX2${_model.studentsEmailTextController.text}AX3',
+                                                                          'https://class-retriever-42b99.firebaseapp.com/connect?data=AX0${currentUserUid}AX1${Uri.encodeComponent(functions.quitSpaceUrl(_model.studentsNameTextController.text) ?? '')}AX2${Uri.encodeComponent(_model.studentsEmailTextController.text)}AX3',
                                                                       time:
                                                                           getCurrentTimestamp,
                                                                       status:

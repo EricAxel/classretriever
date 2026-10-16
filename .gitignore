@@ -30,3 +30,6 @@ node_modules/
 *.iml
 .DS_Store
 Thumbs.db
+
+# Generado por Flutter
+ios/Flutter/ephemeral/

@@ -1,5 +1,6 @@
 import '/auth/firebase_auth/auth_util.dart';
 import '/backend/backend.dart';
+import '/backend/classroom_sync.dart' as classroom_sync;
 import '/flutter_flow/flutter_flow_icon_button.dart';
 import '/flutter_flow/flutter_flow_theme.dart';
 import '/flutter_flow/flutter_flow_util.dart';
@@ -581,7 +582,12 @@ class _ManageStudentsWidgetState extends State<ManageStudentsWidget> {
                                                                               ) ??
                                                                               false;
                                                                           if (confirmDialogResponse) {
-                                                                            await listViewStudentsRecord.reference.delete();
+                                                                            // Lo quita la función removeStudent de Firebase; si falla, no se
+                                                                            // muestra nada, igual que antes.
+                                                                            if (!await classroom_sync.removeStudent(
+                                                                                listViewStudentsRecord.reference.id)) {
+                                                                              return;
+                                                                            }
                                                                             ScaffoldMessenger.of(context).showSnackBar(
                                                                               SnackBar(
                                                                                 content: Text(

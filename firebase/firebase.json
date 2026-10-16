@@ -7,6 +7,15 @@
     {
       "source": "functions",
       "codebase": "functions"
+    },
+    {
+      "source": "backend",
+      "codebase": "backend",
+      "ignore": [
+        "node_modules",
+        "test",
+        ".gitignore"
+      ]
     }
   ],
   "storage": {
@@ -14,6 +23,37 @@
   },
   "hosting": {
     "public": "public",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/connect",
+        "function": {
+          "functionId": "connect",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/callback",
+        "function": {
+          "functionId": "callback",
+          "region": "us-central1"
+        }
+      }
+    ],
+    "headers": [
+      {
+        "source": "/cr/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=86400"
+          }
+        ]
+      }
+    ]
   }
 }
