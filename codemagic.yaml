@@ -4,7 +4,7 @@
 # - android-release: compila el APK (para instalar a mano) y el AAB (para Google Play), firmados.
 #
 # Las credenciales no viven aquí. Se cargan en Codemagic:
-# - Integración de App Store Connect "classretriever_asc" (Issuer ID, Key ID y archivo .p8).
+# - Integración de App Store Connect "Class retrieve" (Issuer ID, Key ID y archivo .p8).
 # - Certificado de distribución de Apple y perfil de App Store (Code signing identities -> iOS).
 # - Llave de Android "classretriever_keystore" (Code signing identities -> Android keystores).
 #
@@ -16,7 +16,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 90
     integrations:
-      app_store_connect: classretriever_asc
+      app_store_connect: Class retrieve
     environment:
       ios_signing:
         distribution_type: app_store
