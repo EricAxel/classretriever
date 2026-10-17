@@ -22,6 +22,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: com.mycompany.classretriever
       vars:
+        APP_STORE_APPLE_ID: 6743425060
         BUILD_NAME: 4.1.0
         BUILD_NUMBER_BASE: 16
       flutter: 3.41.9
@@ -38,9 +39,17 @@ workflows:
         script: xcode-project use-profiles
       - name: Compilar IPA
         script: |
+          # Último build en TestFlight + 1; si la consulta falla, base + build de Codemagic.
+          LATEST=$(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID" 2>/dev/null || true)
+          if [[ "$LATEST" =~ ^[0-9]+$ ]]; then
+            IOS_BUILD_NUMBER=$((LATEST + 1))
+          else
+            IOS_BUILD_NUMBER=$((BUILD_NUMBER_BASE + BUILD_NUMBER))
+          fi
+          echo "Número de compilación de iOS: $IOS_BUILD_NUMBER"
           flutter build ipa --release \
             --build-name="$BUILD_NAME" \
-            --build-number=$((BUILD_NUMBER_BASE + BUILD_NUMBER)) \
+            --build-number="$IOS_BUILD_NUMBER" \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
