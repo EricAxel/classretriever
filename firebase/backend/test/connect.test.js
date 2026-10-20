@@ -125,7 +125,9 @@ test("ya conectado con permiso vivo: añade al padre y muestra «Hooray!» sin i
   await connectHandler(db)({method: "GET", query: {data: qrData()}}, res);
   assert.equal(res.statusCode, 200);
   assert.match(res.body, /Hooray!/);
-  assert.match(res.body, /rocket\.json/);
+  // Misma página que la de estudiante nuevo: perro con gorro y confeti.
+  assert.match(res.body, /dog_with_party_hat\.png/);
+  assert.match(res.body, /confetti\.json/);
   assert.deepEqual(db.data.students.s1.users_uids, ["otroPadre", UID]);
 });
 
