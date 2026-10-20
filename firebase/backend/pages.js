@@ -72,8 +72,7 @@ const ERROR_MESSAGES = {
   expired: "This connection link has expired.\nPlease scan the QR code again.",
   denied: "The connection was not completed.\nPlease scan the QR code again and allow access.",
   missing_scopes: "The connection was not completed.\nPlease scan the QR code again and check all the boxes when Google asks what Class Retriever can access.",
-  failed: "We couldn't complete the connection.\nPlease scan the QR code again.",
-};
+  failed: "We couldn't complete the connection.\nPlease scan the QR code again.",};
 
 function errorPage(kind) {
   const message = ERROR_MESSAGES[kind] || ERROR_MESSAGES.failed;

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
-  SCOPES, parseConnectData, createConnectHandler, createCallbackHandler,
+  SCOPES, REQUEST_SCOPES, parseConnectData, createConnectHandler, createCallbackHandler,
 } = require("../connect");
 
 const NOW = 1_800_000_000_000;
@@ -114,21 +114,28 @@ test("estudiante nuevo: guarda el state y manda a Google con consent y offline",
   assert.equal(url.searchParams.get("prompt"), "consent");
   assert.equal(url.searchParams.get("access_type"), "offline");
   assert.equal(url.searchParams.get("state"), "state123");
-  assert.deepEqual(url.searchParams.get("scope").split(" "), SCOPES);
+  assert.deepEqual(url.searchParams.get("scope").split(" "), REQUEST_SCOPES);
+  assert.equal(url.searchParams.get("login_hint"), "student@school.edu");
   assert.equal(db.data.oauth_states.state123.email, "student@school.edu");
   assert.equal(db.data.oauth_states.state123.expiresAt, NOW + 30 * 60 * 1000);
 });
 
-test("ya conectado con permiso vivo: añade al padre y muestra «Hooray!» sin ir a Google", async () => {
+test("padre nuevo con estudiante ya conectado: pide permiso a Google, no se vincula solo", async () => {
   const db = memoryDb({students: {s1: {email: "student@school.edu", google_refresh_token: "rt", users_uids: ["otroPadre"]}}});
+  const res = fakeRes();
+  await connectHandler(db)({method: "GET", query: {data: qrData()}}, res);
+  assert.equal(res.statusCode, 302);
+  assert.deepEqual(db.data.students.s1.users_uids, ["otroPadre"]);
+});
+
+test("padre ya vinculado con permiso vivo: «Hooray!» sin ir a Google", async () => {
+  const db = memoryDb({students: {s1: {email: "student@school.edu", google_refresh_token: "rt", users_uids: [UID]}}});
   const res = fakeRes();
   await connectHandler(db)({method: "GET", query: {data: qrData()}}, res);
   assert.equal(res.statusCode, 200);
   assert.match(res.body, /Hooray!/);
-  // Misma página que la de estudiante nuevo: perro con gorro y confeti.
   assert.match(res.body, /dog_with_party_hat\.png/);
   assert.match(res.body, /confetti\.json/);
-  assert.deepEqual(db.data.students.s1.users_uids, ["otroPadre", UID]);
 });
 
 test("ya conectado pero con permiso revocado: vuelve a pedir permiso (reconectar)", async () => {
@@ -161,11 +168,20 @@ test("QR inválido: página de error sin botones", async () => {
 // --- callback ---
 
 function callbackHandler(db, exchangeResult) {
-  return createCallbackHandler({db, arrayUnion, logger, now: () => NOW,
+  return createCallbackHandler({db, arrayUnion, logger, clientId: CLIENT_ID, now: () => NOW,
     exchange: async () => exchangeResult});
 }
 
-const okExchange = {ok: true, body: {access_token: "at-new", refresh_token: "rt-new", scope: SCOPES.join(" ")}};
+// id_token como el que devuelve Google al canjear el código.
+function idToken(claims = {}) {
+  const payload = {iss: "https://accounts.google.com", aud: CLIENT_ID, exp: NOW / 1000 + 3600,
+    email: "student@school.edu", email_verified: true, ...claims};
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  return `${b64({alg: "RS256"})}.${b64(payload)}.firma`;
+}
+const exchangeWith = (claims) => ({ok: true, body: {access_token: "at-new", refresh_token: "rt-new",
+  scope: REQUEST_SCOPES.join(" "), id_token: idToken(claims)}});
+const okExchange = exchangeWith();
 const withState = (students = {}) => memoryDb({
   students,
   oauth_states: {st: {uid: UID, name: "Ana Maria", email: "student@school.edu", qrId: "q", expiresAt: NOW + 1000}},
@@ -222,7 +238,7 @@ test("faltan casillas de permiso: pide volver a escanear y marcar todas", async 
 
 test("Google no devuelve refresh token: nunca se guarda vacío ni \"null\"", async () => {
   const db = withState();
-  const noRefresh = {ok: true, body: {access_token: "a", scope: SCOPES.join(" ")}};
+  const noRefresh = {ok: true, body: {access_token: "a", scope: SCOPES.join(" "), id_token: idToken()}};
   const res = fakeRes();
   await callbackHandler(db, noRefresh)({method: "GET", query: {code: "c", state: "st"}}, res);
   assert.match(res.body, /couldn't complete/);
@@ -255,4 +271,39 @@ test("la página no envía referrer ni se puede incrustar", async () => {
   assert.equal(res.headers["Referrer-Policy"], "no-referrer");
   assert.equal(res.headers["X-Frame-Options"], "DENY");
   assert.match(res.headers["Content-Security-Policy"], /script-src 'self'/);
+});
+
+// --- La cuenta que acepta debe ser la del email del estudiante ---
+
+test("cuenta distinta al email del estudiante: no se guarda nada ni se vincula", async () => {
+  const db = withState({s1: {email: "student@school.edu", google_refresh_token: "rt-real", users_uids: ["padreReal"]}});
+  const res = fakeRes();
+  await callbackHandler(db, exchangeWith({email: "intruso@gmail.com"}))({method: "GET", query: {code: "c", state: "st"}}, res);
+  assert.match(res.body, /couldn't complete/);
+  assert.deepEqual(db.data.students.s1, {email: "student@school.edu", google_refresh_token: "rt-real", users_uids: ["padreReal"]});
+});
+
+test("mismo email con otras mayúsculas: se acepta", async () => {
+  const db = withState();
+  const res = fakeRes();
+  await callbackHandler(db, exchangeWith({email: "Student@School.EDU"}))({method: "GET", query: {code: "c", state: "st"}}, res);
+  assert.match(res.body, /Hooray!/);
+  assert.equal(Object.keys(db.data.students).length, 1);
+});
+
+test("id_token ausente, de otra app, vencido o con email sin verificar: se rechaza", async () => {
+  const casos = [
+    {ok: true, body: {access_token: "a", refresh_token: "r", scope: REQUEST_SCOPES.join(" ")}},
+    exchangeWith({aud: "otra-app.apps.googleusercontent.com"}),
+    exchangeWith({exp: NOW / 1000 - 10}),
+    exchangeWith({email_verified: false}),
+    exchangeWith({iss: "https://evil.example.com"}),
+  ];
+  for (const caso of casos) {
+    const db = withState();
+    const res = fakeRes();
+    await callbackHandler(db, caso)({method: "GET", query: {code: "c", state: "st"}}, res);
+    assert.match(res.body, /couldn't complete/);
+    assert.equal(Object.keys(db.data.students || {}).length, 0);
+  }
 });
