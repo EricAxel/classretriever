@@ -81,7 +81,6 @@ exports.callback = onRequest(
     db: getFirestore(),
     arrayUnion: (value) => FieldValue.arrayUnion(value),
     logger,
-    clientId: GOOGLE_CLIENT_ID,
     exchange: (code) => exchangeCode({
       code,
       clientId: GOOGLE_CLIENT_ID,

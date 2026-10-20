@@ -1,14 +1,12 @@
 // Conexión del estudiante (reemplaza la página de FlutterFlow y los flujos
 // de BuildShip previousconnection, adduid y tokenExchangeGoogleOauth).
 //
-// Paso a paso del estudiante:
+// Paso a paso del estudiante, igual que hoy:
 //   1. Escanea el QR del padre -> /connect?data=AX0{uid}AX1{nombre}AX2{email}AX3{qr}AX4
-//   2. Si ese padre ya estaba vinculado y el permiso sigue vivo: ve «Hooray!».
-//      Si no (padre nuevo, estudiante nuevo o permiso vencido): va a la
-//      pantalla de permiso de Google, con la cuenta del estudiante sugerida.
-//   3. Google vuelve a /callback. Solo se guarda si la cuenta que aceptó es la
-//      del email que escribió el padre; así nadie puede vincularse a un
-//      estudiante ajeno sabiendo solo su email.
+//   2. Si ya estaba conectado y su permiso sigue vivo: se añade el padre y ve
+//      «Hooray!» (como previousconnection + adduid).
+//      Si no: va a la pantalla de permiso de Google.
+//   3. Google vuelve a /callback: se guarda el permiso y ve «Hooray!».
 //
 // En `students` se escriben los mismos 5 campos que escribe hoy BuildShip:
 // email, google_refresh_token, google_token, student_given_name, users_uids.
@@ -24,9 +22,6 @@ const SCOPES = [
   "https://www.googleapis.com/auth/classroom.course-work.readonly",
   "https://www.googleapis.com/auth/classroom.student-submissions.me.readonly",
 ];
-// openid y email: datos básicos de inicio de sesión, para saber qué cuenta aceptó.
-const REQUEST_SCOPES = ["openid", "email", ...SCOPES];
-const GOOGLE_ISSUERS = new Set(["accounts.google.com", "https://accounts.google.com"]);
 const STATE_TTL_MS = 30 * 60 * 1000;
 const UID_RE = /^[A-Za-z0-9]{10,128}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -71,40 +66,17 @@ async function findStudent(db, email, uid) {
   return docs.find((d) => (d.data.users_uids || []).includes(uid)) || docs[0];
 }
 
-function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
-}
-
-// Lee el id_token que Google devuelve junto con los tokens. Llega directo de
-// Google por HTTPS en el canje del código, así que basta validar su contenido.
-function readIdToken(idToken, clientId, now) {
-  if (typeof idToken !== "string") return null;
-  const parts = idToken.split(".");
-  if (parts.length !== 3) return null;
-  let claims;
-  try {
-    claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-  } catch (e) {
-    return null;
-  }
-  if (!claims || claims.aud !== clientId || !GOOGLE_ISSUERS.has(claims.iss)) return null;
-  if (!(Number(claims.exp) * 1000 > now())) return null;
-  if (claims.email_verified !== true || typeof claims.email !== "string") return null;
-  return {email: claims.email};
-}
-
-function authorizationUrl({clientId, redirectUri, state, loginHint}) {
+function authorizationUrl({clientId, redirectUri, state}) {
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: REQUEST_SCOPES.join(" "),
+    scope: SCOPES.join(" "),
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: "true",
     state,
   });
-  if (loginHint) params.set("login_hint", loginHint);
   return `${AUTH_URL}?${params}`;
 }
 
@@ -118,18 +90,19 @@ function createConnectHandler({db, accessTokenFor, arrayUnion, clientId, redirec
 
     try {
       const existing = await findStudent(db, info.email, info.uid);
-      const alreadyLinked = existing && (existing.data.users_uids || []).includes(info.uid);
-      if (alreadyLinked && usableToken(existing.data.google_refresh_token)) {
+      if (existing && usableToken(existing.data.google_refresh_token)) {
         try {
-          // Este padre ya estaba vinculado y el permiso sigue vivo: nada que pedir.
+          // El permiso guardado sigue vivo: se añade el padre sin volver a pedirlo.
           await accessTokenFor(existing.id, existing.data.google_refresh_token);
+          if (!(existing.data.users_uids || []).includes(info.uid)) {
+            await existing.ref.update({users_uids: arrayUnion(info.uid)});
+          }
           logger.info("connect: already connected", {studentId: existing.id});
           return sendPage(res, 200, alreadyConnectedPage());
         } catch (e) {
           logger.info("connect: stored permission unusable, asking again", {studentId: existing.id});
         }
       }
-      // Padre nuevo para este estudiante: siempre se pide el permiso del estudiante.
 
       const state = randomState();
       await db.collection("oauth_states").doc(state).set({
@@ -139,7 +112,7 @@ function createConnectHandler({db, accessTokenFor, arrayUnion, clientId, redirec
       });
       res.set("Cache-Control", "no-store");
       res.set("Referrer-Policy", "no-referrer");
-      return res.redirect(302, authorizationUrl({clientId, redirectUri, state, loginHint: info.email.trim()}));
+      return res.redirect(302, authorizationUrl({clientId, redirectUri, state}));
     } catch (e) {
       logger.warn("connect: failed", {reason: e.message});
       return sendPage(res, 503, errorPage("failed"));
@@ -147,7 +120,7 @@ function createConnectHandler({db, accessTokenFor, arrayUnion, clientId, redirec
   };
 }
 
-function createCallbackHandler({db, exchange, arrayUnion, logger, clientId, now = Date.now}) {
+function createCallbackHandler({db, exchange, arrayUnion, logger, now = Date.now}) {
   return async function callback(req, res) {
     if (req.method !== "GET") return sendPage(res, 405, errorPage("failed"));
 
@@ -183,13 +156,6 @@ function createCallbackHandler({db, exchange, arrayUnion, logger, clientId, now 
       if (!SCOPES.every((s) => granted.has(s))) {
         logger.info("callback: missing scopes");
         return sendPage(res, 200, errorPage("missing_scopes"));
-      }
-
-      // La cuenta que aceptó debe ser la del email que escribió el padre.
-      const identity = readIdToken(result.body.id_token, clientId, now);
-      if (!identity || normalizeEmail(identity.email) !== normalizeEmail(info.email)) {
-        logger.warn("callback: account does not match the student's email", {hasIdentity: !!identity});
-        return sendPage(res, 200, errorPage("failed"));
       }
 
       const refreshToken = result.body.refresh_token;
@@ -229,8 +195,6 @@ function createCallbackHandler({db, exchange, arrayUnion, logger, clientId, now 
 
 module.exports = {
   SCOPES,
-  REQUEST_SCOPES,
-  readIdToken,
   parseConnectData,
   authorizationUrl,
   createConnectHandler,
